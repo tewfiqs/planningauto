@@ -14,10 +14,14 @@ export default function Setup() {
 
   useEffect(() => {
     async function checkExisting() {
-      const { data, error } = await supabase.rpc('has_gestionnaire');
-      if (!error && data === true) {
-        setAlreadyDone(true);
-        setTimeout(() => navigate('/login', { replace: true }), 3000);
+      try {
+        const { data, error } = await supabase.rpc('has_gestionnaire');
+        if (!error && data === true) {
+          setAlreadyDone(true);
+          setTimeout(() => navigate('/login', { replace: true }), 3000);
+        }
+      } catch {
+        // RPC inexistante ou erreur reseau : on affiche le formulaire
       }
       setChecking(false);
     }
@@ -36,12 +40,16 @@ export default function Setup() {
     }
 
     // Verifier une derniere fois qu'aucun gestionnaire n'existe
-    const { data: exists } = await supabase.rpc('has_gestionnaire');
-    if (exists === true) {
-      setAlreadyDone(true);
-      setSubmitting(false);
-      setTimeout(() => navigate('/login', { replace: true }), 3000);
-      return;
+    try {
+      const { data: exists } = await supabase.rpc('has_gestionnaire');
+      if (exists === true) {
+        setAlreadyDone(true);
+        setSubmitting(false);
+        setTimeout(() => navigate('/login', { replace: true }), 3000);
+        return;
+      }
+    } catch {
+      // RPC indisponible : on continue la creation
     }
 
     const { error: signUpError } = await supabase.auth.signUp({
