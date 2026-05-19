@@ -1,0 +1,30 @@
+-- ============================================
+-- Utilisateurs de test
+-- A executer APRES 004_auth_trigger.sql
+--
+-- Ces utilisateurs sont crees via l'API Auth de Supabase.
+-- Utilisez le script ci-dessous dans le SQL Editor,
+-- OU creez-les via le dashboard Supabase > Authentication > Users.
+--
+-- Mot de passe pour tous : Planning2024!
+--
+-- Comptes a creer :
+--   gestionnaire@planningauto.fr  (role: gestionnaire)
+--   malika@planningauto.fr        (role: intervenant)
+--   yasmina@planningauto.fr       (role: intervenant)
+--   titi@planningauto.fr          (role: intervenant)
+--   djima@planningauto.fr         (role: intervenant)
+--   aide1@planningauto.fr         (role: intervenant)
+--   aide2@planningauto.fr         (role: intervenant)
+--   aide3@planningauto.fr         (role: intervenant)
+--   am@planningauto.fr            (role: intervenant)
+-- ============================================
+
+-- NOTE: La creation d'utilisateurs auth se fait via l'API ou le dashboard.
+-- Le trigger handle_new_user() creera automatiquement le profil
+-- et liera l'intervenant par email.
+--
+-- Pour creer un gestionnaire, passez le metadata:
+--   { "app_role": "gestionnaire" }
+-- Pour un intervenant (par defaut):
+--   { "app_role": "intervenant" }
