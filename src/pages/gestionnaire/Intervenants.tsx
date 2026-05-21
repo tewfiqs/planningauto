@@ -16,11 +16,34 @@ const CRENEAU_LABELS: Record<string, string> = {
   WE: 'Weekend (11h-19h)',
 };
 
-const CONTRAINTE_TYPE_LABELS: Record<string, string> = {
-  hard: 'Obligatoire',
-  soft: 'Souple',
-  quota: 'Quota',
+const JOURS_LABELS = [
+  { value: 0, label: 'Lun' },
+  { value: 1, label: 'Mar' },
+  { value: 2, label: 'Mer' },
+  { value: 3, label: 'Jeu' },
+  { value: 4, label: 'Ven' },
+  { value: 5, label: 'Sam' },
+  { value: 6, label: 'Dim' },
+];
+
+const VALEUR_OPTIONS = [
+  { value: 'obligatoire', label: 'Obligatoire', type: 'hard' as const },
+  { value: 'optionnel', label: 'Optionnel (dernier recours)', type: 'soft' as const },
+  { value: 'interdit', label: 'Interdit', type: 'hard' as const },
+  { value: 'quota', label: 'Quota (max par periode)', type: 'quota' as const },
+];
+
+const VALEUR_BADGES: Record<string, { bg: string; text: string }> = {
+  obligatoire: { bg: 'bg-green-100', text: 'text-green-700' },
+  optionnel: { bg: 'bg-yellow-100', text: 'text-yellow-700' },
+  interdit: { bg: 'bg-red-100', text: 'text-red-700' },
 };
+
+function joursLabel(jours: number[] | null): string {
+  if (!jours || jours.length === 0) return 'Tous les jours';
+  if (jours.length === 7) return 'Tous les jours';
+  return jours.map(j => JOURS_LABELS.find(l => l.value === j)?.label ?? '?').join(', ');
+}
 
 interface IntervenantWithContraintes extends Intervenant {
   contraintes: Contrainte[];
@@ -34,10 +57,11 @@ export default function Intervenants() {
   const [editingIntervenant, setEditingIntervenant] = useState<Intervenant | null>(null);
 
   const [newContrainte, setNewContrainte] = useState({
-    type: 'hard' as 'hard' | 'soft' | 'quota',
     creneau_code: 'APM',
-    valeur: 'autorisé',
+    valeur: 'obligatoire',
+    jours_semaine: [] as number[],
     periode: '' as string,
+    quota_max: '',
     description: '',
   });
 
@@ -74,18 +98,35 @@ export default function Intervenants() {
 
   useEffect(() => { fetchIntervenants(); }, []);
 
+  function toggleJour(jour: number) {
+    setNewContrainte(prev => {
+      const jours = prev.jours_semaine.includes(jour)
+        ? prev.jours_semaine.filter(j => j !== jour)
+        : [...prev.jours_semaine, jour].sort((a, b) => a - b);
+      return { ...prev, jours_semaine: jours };
+    });
+  }
+
   async function handleAddContrainte() {
     if (!selected) return;
+    const option = VALEUR_OPTIONS.find(o => o.value === newContrainte.valeur);
+    if (!option) return;
+
+    const isQuota = option.type === 'quota';
+    const valeur = isQuota ? `max:${newContrainte.quota_max}` : newContrainte.valeur;
+    const jours = newContrainte.jours_semaine.length > 0 ? newContrainte.jours_semaine : null;
+
     await supabase.from('contraintes').insert({
       intervenant_id: selected.id,
-      type: newContrainte.type,
+      type: option.type,
       creneau_code: newContrainte.creneau_code,
-      valeur: newContrainte.valeur,
-      periode: newContrainte.periode || null,
+      valeur,
+      jours_semaine: jours,
+      periode: isQuota ? (newContrainte.periode || 'semaine') : (newContrainte.periode || null),
       description: newContrainte.description || null,
     });
     setShowAddContrainte(false);
-    setNewContrainte({ type: 'hard', creneau_code: 'APM', valeur: 'autorisé', periode: '', description: '' });
+    setNewContrainte({ creneau_code: 'APM', valeur: 'obligatoire', jours_semaine: [], periode: '', quota_max: '', description: '' });
     fetchIntervenants();
   }
 
@@ -114,6 +155,8 @@ export default function Intervenants() {
   if (loading) {
     return <div className="flex justify-center py-12"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" /></div>;
   }
+
+  const isQuotaMode = newContrainte.valeur === 'quota';
 
   return (
     <div className="flex gap-6 h-[calc(100vh-8rem)]">
@@ -204,42 +247,41 @@ export default function Intervenants() {
               <p className="text-gray-400 text-sm">Aucune contrainte definie</p>
             ) : (
               <div className="space-y-2">
-                {selected.contraintes.map(c => (
-                  <div key={c.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className={`px-2 py-0.5 text-xs rounded-full font-medium ${
-                          c.type === 'hard' ? 'bg-red-100 text-red-700' :
-                          c.type === 'quota' ? 'bg-yellow-100 text-yellow-700' :
-                          'bg-blue-100 text-blue-700'
-                        }`}>
-                          {CONTRAINTE_TYPE_LABELS[c.type]}
-                        </span>
-                        <span className="text-sm font-medium text-gray-900">
-                          {CRENEAU_LABELS[c.creneau_code] || c.creneau_code}
-                        </span>
+                {selected.contraintes.map(c => {
+                  const badge = VALEUR_BADGES[c.valeur] ?? { bg: 'bg-purple-100', text: 'text-purple-700' };
+                  return (
+                    <div key={c.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className={`px-2 py-0.5 text-xs rounded-full font-medium ${badge.bg} ${badge.text}`}>
+                            {c.type === 'quota' ? 'Quota' : c.valeur.charAt(0).toUpperCase() + c.valeur.slice(1)}
+                          </span>
+                          <span className="text-sm font-medium text-gray-900">
+                            {CRENEAU_LABELS[c.creneau_code] || c.creneau_code}
+                          </span>
+                        </div>
+                        <p className="text-sm text-gray-600 mt-1">
+                          {joursLabel(c.jours_semaine)}
+                          {c.type === 'quota' ? ` — ${c.valeur} (par ${c.periode})` : ''}
+                        </p>
+                        {c.description && <p className="text-xs text-gray-400 mt-0.5">{c.description}</p>}
                       </div>
-                      <p className="text-sm text-gray-600 mt-1">
-                        {c.valeur}
-                        {c.periode ? ` (par ${c.periode})` : ''}
-                      </p>
-                      {c.description && <p className="text-xs text-gray-400 mt-0.5">{c.description}</p>}
+                      <button
+                        onClick={() => handleDeleteContrainte(c.id)}
+                        className="p-1 text-gray-400 hover:text-red-500 transition-colors"
+                      >
+                        <Trash2 size={16} />
+                      </button>
                     </div>
-                    <button
-                      onClick={() => handleDeleteContrainte(c.id)}
-                      className="p-1 text-gray-400 hover:text-red-500 transition-colors"
-                    >
-                      <Trash2 size={16} />
-                    </button>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
 
             {/* Modal ajout contrainte */}
             {showAddContrainte && (
               <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-                <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-md">
+                <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-lg">
                   <div className="flex items-center justify-between mb-4">
                     <h3 className="text-lg font-semibold">Ajouter une contrainte</h3>
                     <button onClick={() => setShowAddContrainte(false)} className="text-gray-400 hover:text-gray-600">
@@ -247,20 +289,7 @@ export default function Intervenants() {
                     </button>
                   </div>
 
-                  <div className="space-y-3">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Type</label>
-                      <select
-                        value={newContrainte.type}
-                        onChange={e => setNewContrainte({ ...newContrainte, type: e.target.value as 'hard' | 'soft' | 'quota' })}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                      >
-                        <option value="hard">Obligatoire (hard)</option>
-                        <option value="soft">Souple (soft)</option>
-                        <option value="quota">Quota</option>
-                      </select>
-                    </div>
-
+                  <div className="space-y-4">
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">Creneau</label>
                       <select
@@ -275,28 +304,65 @@ export default function Intervenants() {
                     </div>
 
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Valeur</label>
-                      <input
-                        value={newContrainte.valeur}
-                        onChange={e => setNewContrainte({ ...newContrainte, valeur: e.target.value })}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                        placeholder="autorisé, interdit, priorité, max:2, no_consecutive..."
-                      />
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Jours de la semaine</label>
+                      <div className="flex gap-2">
+                        {JOURS_LABELS.map(j => (
+                          <button
+                            key={j.value}
+                            type="button"
+                            onClick={() => toggleJour(j.value)}
+                            className={`px-3 py-1.5 text-sm rounded-lg border transition-colors ${
+                              newContrainte.jours_semaine.includes(j.value)
+                                ? 'bg-blue-600 text-white border-blue-600'
+                                : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                            }`}
+                          >
+                            {j.label}
+                          </button>
+                        ))}
+                      </div>
+                      <p className="text-xs text-gray-400 mt-1">Aucun = tous les jours</p>
                     </div>
 
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Periode</label>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Type</label>
                       <select
-                        value={newContrainte.periode}
-                        onChange={e => setNewContrainte({ ...newContrainte, periode: e.target.value })}
+                        value={newContrainte.valeur}
+                        onChange={e => setNewContrainte({ ...newContrainte, valeur: e.target.value })}
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg"
                       >
-                        <option value="">Aucune</option>
-                        <option value="jour">Jour</option>
-                        <option value="semaine">Semaine</option>
-                        <option value="mois">Mois</option>
+                        {VALEUR_OPTIONS.map(o => (
+                          <option key={o.value} value={o.value}>{o.label}</option>
+                        ))}
                       </select>
                     </div>
+
+                    {isQuotaMode && (
+                      <>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Periode</label>
+                          <select
+                            value={newContrainte.periode}
+                            onChange={e => setNewContrainte({ ...newContrainte, periode: e.target.value })}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                          >
+                            <option value="semaine">Semaine</option>
+                            <option value="mois">Mois</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Maximum</label>
+                          <input
+                            type="number"
+                            min="1"
+                            value={newContrainte.quota_max}
+                            onChange={e => setNewContrainte({ ...newContrainte, quota_max: e.target.value })}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                            placeholder="ex: 2"
+                          />
+                        </div>
+                      </>
+                    )}
 
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>

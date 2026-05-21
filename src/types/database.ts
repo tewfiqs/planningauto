@@ -35,6 +35,7 @@ export interface Contrainte {
   creneau_code: CreneauCode;
   valeur: string;
   periode: 'jour' | 'semaine' | 'mois' | null;
+  jours_semaine: number[] | null;
   description: string | null;
   created_at: string;
 }

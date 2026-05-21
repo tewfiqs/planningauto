@@ -7,7 +7,7 @@ import { supabase } from '../../lib/supabase';
 import { genererEtSauvegarderPlanning, validerPlanning } from '../../engine/service';
 import type { AlerteGeneration } from '../../engine/types';
 import { exportExcel, exportPDF } from '../../engine/exports';
-import { Play, Check, AlertTriangle, Loader2, FileSpreadsheet, FileText } from 'lucide-react';
+import { Play, Check, AlertTriangle, Loader2, FileSpreadsheet, FileText, RefreshCw } from 'lucide-react';
 
 const CRENEAU_COLORS: Record<string, string> = {
   AM_MENA: '#f59e0b',
@@ -32,6 +32,8 @@ export default function Calendrier() {
   const [intervenants, setIntervenants] = useState<IntervenantMap>({});
   const [planning, setPlanning] = useState<{ id: string; statut: string } | null>(null);
   const [generating, setGenerating] = useState(false);
+  const [regenerating, setRegenerating] = useState(false);
+  const [showRegenConfirm, setShowRegenConfirm] = useState(false);
   const [alertes, setAlertes] = useState<AlerteGeneration[]>([]);
   const [scores, setScores] = useState<any[]>([]);
   const calendarRef = useRef<FullCalendar>(null);
@@ -118,6 +120,30 @@ export default function Calendrier() {
     setGenerating(false);
   }
 
+  async function handleRegenerate() {
+    if (!planning) return;
+    setShowRegenConfirm(false);
+    setRegenerating(true);
+    setAlertes([]);
+    try {
+      await supabase.from('affectations').delete().eq('planning_id', planning.id);
+      await supabase.from('scores_equite').delete().eq('planning_id', planning.id);
+      await supabase.from('plannings').update({ statut: 'brouillon', validated_at: null }).eq('id', planning.id);
+      const result = await genererEtSauvegarderPlanning(selectedYear, selectedMonth);
+      setAlertes(result.alertes);
+      await loadPlanning();
+    } catch (err) {
+      console.error('Erreur regeneration:', err);
+      setAlertes([{
+        date: '',
+        creneau_code: 'APM',
+        message: `Erreur lors de la regeneration : ${err}`,
+        niveau: 'error',
+      }]);
+    }
+    setRegenerating(false);
+  }
+
   async function handleValidate() {
     if (!planning) return;
     await validerPlanning(planning.id);
@@ -173,14 +199,27 @@ export default function Calendrier() {
         </div>
 
         <div className="flex gap-2">
-          <button
-            onClick={handleGenerate}
-            disabled={generating}
-            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50"
-          >
-            {generating ? <Loader2 size={16} className="animate-spin" /> : <Play size={16} />}
-            {generating ? 'Generation...' : `Generer ${new Date(selectedYear, selectedMonth - 1).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' })}`}
-          </button>
+          {!planning && (
+            <button
+              onClick={handleGenerate}
+              disabled={generating}
+              className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50"
+            >
+              {generating ? <Loader2 size={16} className="animate-spin" /> : <Play size={16} />}
+              {generating ? 'Generation...' : `Generer ${new Date(selectedYear, selectedMonth - 1).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' })}`}
+            </button>
+          )}
+
+          {planning && !isValidated && (
+            <button
+              onClick={() => setShowRegenConfirm(true)}
+              disabled={regenerating}
+              className="flex items-center gap-2 px-4 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition-colors disabled:opacity-50"
+            >
+              {regenerating ? <Loader2 size={16} className="animate-spin" /> : <RefreshCw size={16} />}
+              {regenerating ? 'Regeneration...' : 'Regenerer'}
+            </button>
+          )}
 
           {planning && !isValidated && (
             <button
@@ -215,6 +254,33 @@ export default function Calendrier() {
           )}
         </div>
       </div>
+
+      {/* Modal confirmation regeneration */}
+      {showRegenConfirm && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-md">
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">Regenerer le planning ?</h3>
+            <p className="text-sm text-gray-600 mb-4">
+              Cette action va supprimer toutes les affectations actuelles et regenerer le planning
+              a partir des contraintes en vigueur. Cette action est irreversible.
+            </p>
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setShowRegenConfirm(false)}
+                className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+              >
+                Annuler
+              </button>
+              <button
+                onClick={handleRegenerate}
+                className="px-4 py-2 text-sm bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition-colors"
+              >
+                Confirmer la regeneration
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Alertes */}
       {alertes.length > 0 && (
